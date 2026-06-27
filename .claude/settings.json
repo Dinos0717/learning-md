@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash(/*)",
+      "Read(/*)",
+      "Write(/*)",
+      "Edit(/*)",
+      "WebFetch(/*)",
+      "WebSearch(/*)",
+      "Agent(/*)",
+      "Skill(/*)",
+      "mcp__MCP_DOCKER__*(/*)",
+      "Monitor(/*)",
+      "TaskCreate(/*)",
+      "TaskUpdate(/*)",
+      "CronCreate(/*)",
+      "CronDelete(/*)",
+      "EnterPlanMode",
+      "ExitPlanMode",
+      "EnterWorktree(/*)",
+      "ExitWorktree(/*)",
+      "AskUserQuestion(/*)",
+      "NotebookEdit(/*)",
+      "ListMcpResourcesTool(/*)",
+      "ReadMcpResourceTool(/*)"
+    ]
+  }
+}
