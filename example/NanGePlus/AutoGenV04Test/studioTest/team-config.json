@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "component_type": "team",
+  "name": "test2",
+  "participants": [
+    {
+      "component_type": "agent",
+      "name": "assistant_agent",
+      "agent_type": "AssistantAgent",
+      "system_message": "You are a helpful assistant. Solve tasks carefully. When done respond with TERMINATE",
+      "model_client": {
+        "component_type": "model",
+        "model": "gpt-4o-mini-2024-07-18",
+        "model_type": "OpenAIChatCompletionClient",
+        "base_url": "https://yunwu.ai/v1",
+        "api_key": "sk-CWmxGeg5sm8NexAk7VyUIDHafWXHCgOJuyDyiIBjbEAaSu6p"
+      },
+      "tools": []
+    }
+  ],
+  "team_type": "RoundRobinGroupChat",
+  "termination_condition": {
+    "component_type": "termination",
+    "termination_type": "MaxMessageTermination",
+    "max_messages": 3
+  }
+}

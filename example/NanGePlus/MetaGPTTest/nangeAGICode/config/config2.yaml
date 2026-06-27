@@ -1,0 +1,5 @@
+llm:
+  api_type: "openai"
+  model: "gpt-4o-mini"
+  base_url: "https://yunwu.ai/v1"
+  api_key: "sk-w39WoB6J0FdXcoUoEC5S3fMgmqx3GQURX08NkUDso93Rl88t"
