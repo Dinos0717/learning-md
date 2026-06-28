@@ -52,11 +52,9 @@ sequenceDiagram
     end
 ```
 
-
-
 ### 1.2 多智能体设计思想
 
-`langgraph_supervisor` 是围绕 Supervisor pattern 的一套图编排封装：Supervisor 负责高层路由与协调，专用 Sub-Agent 负责各自领域的工具调用与自然语言确认，最终由 Supervisor 汇总结果。与“把 Sub-Agent 包装成工具、在工具内 `ainvoke` 调用”的方案相比，它把委派与控制流上移到 **StateGraph**，可获得更清晰的执行路径与更一致的消息历史管理。
+`langgraph_supervisor` 是围绕 Supervisor pattern 的一套图编排封装：Supervisor 负责高层路由与协调，专用 Sub-Agent 负责各自领域的工具调用与自然语言确认，最终由 Supervisor 汇总结果。与"把 Sub-Agent 包装成工具、在工具内 `ainvoke` 调用"的方案相比，它把委派与控制流上移到 **StateGraph**，可获得更清晰的执行路径与更一致的消息历史管理。
 
 1. 为每个 Sub-Agent 自动生成 `transfer_to_<name>` Handoff 工具
 2. Handoff 工具内部返回 `Command(goto=<name>, graph=Command.PARENT)`，在父图（StateGraph）层面路由，而非在工具函数内调用 `ainvoke`
@@ -75,14 +73,12 @@ sequenceDiagram
 
 ### 1.3 SSE 事件格式（每行 `data: <JSON>\n\n`）
 
-
 | type        | 说明      | 示例                                                                                                    |
 | ----------- | ------- | ----------------------------------------------------------------------------------------------------- |
 | token       | 模型文本片段  | `{"type": "token", "content": "你好"}`                                                                  |
 | tool_output | 工具节点返回  | `{"type": "tool_output", "content": "工具执行结果..."}`                                                     |
 | completed   | 正常结束    | `{"type": "completed", "result": "完整回答文本"}`                                                           |
 | interrupted | HITL 中断 | `{"type": "interrupted", "interrupt_details": { "action_requests": [...], "review_configs": [...] }}` |
-
 
 ## 2、准备工作
 
@@ -154,7 +150,7 @@ pip install lxml==6.0.2
 pip install beautifulsoup4==4.14.3
 
 # 新增：官方多智能体 Supervisor 包
-pip install langgraph-supervisor==0.0.31       
+pip install langgraph-supervisor==0.0.31
 ```
 
 首次使用 Playwright 请在同一虚拟环境中执行 `playwright install`（安装 Chromium）
@@ -208,4 +204,3 @@ python api_test.py --multi                        # 非流式，多 Agent 协作
 python api_test.py --multi --stream --debug       # 流式，多 Agent 协作场景
 
 ```
-

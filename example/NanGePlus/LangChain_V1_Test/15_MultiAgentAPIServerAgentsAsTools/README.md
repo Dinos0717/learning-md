@@ -54,8 +54,6 @@ sequenceDiagram
     end
 ```
 
-
-
 ### 1.2 多智能体设计思想
 
 **Agents as Tools** 是 LangChain 官方文档描述的 Supervisor 多智能体模式，核心思路是将不同领域的工具和提示词分别交给专属 Sub-Agent 管理，Supervisor 只做高层路由决策。系统分为三层：
@@ -69,18 +67,17 @@ sequenceDiagram
 采用 **Agents as Tools** 模式，通过多层抽象实现关注点分离，核心设计思路如下：
 
 1. **工具分层路由**
-  Supervisor 只持有三个高层工具（`web_agent_tool`、`knowledge_agent_tool`、`task_agent_tool`），LLM 根据用户意图选择工具路由，无需从数十个底层工具中做选择，路由精度显著提升
+   Supervisor 只持有三个高层工具（`web_agent_tool`、`knowledge_agent_tool`、`task_agent_tool`），LLM 根据用户意图选择工具路由，无需从数十个底层工具中做选择，路由精度显著提升
 2. **Sub-Agent 无状态化**
-  Sub-Agent 不持有 checkpointer，每次工具调用独立执行；状态由 Supervisor 的 checkpointer 统一管理，实现状态与执行的解耦
+   Sub-Agent 不持有 checkpointer，每次工具调用独立执行；状态由 Supervisor 的 checkpointer 统一管理，实现状态与执行的解耦
 3. **configurable 透传机制**
-  工具包装器在调用 `sub_agent.ainvoke()` 时，显式将 Supervisor 的 `config["configurable"]`（含 `user_id`、`thread_id` 等）传递给 Sub-Agent，确保上下文在多层调用链中不丢失
+   工具包装器在调用 `sub_agent.ainvoke()` 时，显式将 Supervisor 的 `config["configurable"]`（含 `user_id`、`thread_id` 等）传递给 Sub-Agent，确保上下文在多层调用链中不丢失
 4. **HITL 跨层传播**
-  Sub-Agent 内部工具触发中断时，中断异常经 `@tool` 包装器自动向上传播，由 Supervisor 的 checkpointer 捕获并持久化；前端仍通过同一套 `/intervene` 接口恢复执行，用户无感知多层结构
+   Sub-Agent 内部工具触发中断时，中断异常经 `@tool` 包装器自动向上传播，由 Supervisor 的 checkpointer 捕获并持久化；前端仍通过同一套 `/intervene` 接口恢复执行，用户无感知多层结构
 5. **并行委派**
-  当用户请求同时涉及多个领域时，Supervisor LLM 可在同一轮推理中并行调用多个 Sub-Agent 工具，减少总响应时延
+   当用户请求同时涉及多个领域时，Supervisor LLM 可在同一轮推理中并行调用多个 Sub-Agent 工具，减少总响应时延
 
 ### 1.3 SSE 事件格式（每行 `data: <JSON>\n\n`）
-
 
 | type        | 说明      | 示例                                                                                                    |
 | ----------- | ------- | ----------------------------------------------------------------------------------------------------- |
@@ -89,39 +86,38 @@ sequenceDiagram
 | completed   | 正常结束    | `{"type": "completed", "result": "完整回答文本"}`                                                           |
 | interrupted | HITL 中断 | `{"type": "interrupted", "interrupt_details": { "action_requests": [...], "review_configs": [...] }}` |
 
-
 ## 2、准备工作
 
 ### 2.1 集成开发环境搭建
 
 anaconda提供python虚拟环境,pycharm提供集成开发环境
 
-具体参考如下视频:  
-【大模型应用开发-入门系列】集成开发环境搭建-开发前准备工作  
-[https://www.bilibili.com/video/BV1nvdpYCE33/](https://www.bilibili.com/video/BV1nvdpYCE33/)  
+具体参考如下视频:
+【大模型应用开发-入门系列】集成开发环境搭建-开发前准备工作
+[https://www.bilibili.com/video/BV1nvdpYCE33/](https://www.bilibili.com/video/BV1nvdpYCE33/)
 [https://youtu.be/KyfGduq5d7w](https://youtu.be/KyfGduq5d7w)
 
 ### 2.2 大模型LLM服务接口调用方案
 
-(1)gpt大模型等国外大模型使用方案  
-国内无法直接访问，可以使用Agent的方式，具体Agent方案自己选择  
+(1)gpt大模型等国外大模型使用方案
+国内无法直接访问，可以使用Agent的方式，具体Agent方案自己选择
 这里推荐大家使用:[https://nangeai.top/register?aff=Vxlp](https://nangeai.top/register?aff=Vxlp)
 
 (2)非gpt大模型方案 OneAPI方式或大模型厂商原生接口
 
 (3)本地开源大模型方案(Ollama方式)
 
-具体参考如下视频:  
-【大模型应用开发-入门系列】大模型LLM服务接口调用方案  
-[https://www.bilibili.com/video/BV1BvduYKE75/](https://www.bilibili.com/video/BV1BvduYKE75/)  
+具体参考如下视频:
+【大模型应用开发-入门系列】大模型LLM服务接口调用方案
+[https://www.bilibili.com/video/BV1BvduYKE75/](https://www.bilibili.com/video/BV1BvduYKE75/)
 [https://youtu.be/mTrgVllUl7Y](https://youtu.be/mTrgVllUl7Y)
 
 ## 3、项目初始化
 
 关于本期视频的项目初始化请参考本系列的入门案例那期视频，视频链接地址如下:
 
-【EP01_快速入门用例】2026必学！LangChain最新V1.x版本全家桶LangChain+LangGraph+DeepAgents开发经验免费分享  
-[https://youtu.be/0ixyKPE2kHQ](https://youtu.be/0ixyKPE2kHQ)  
+【EP01_快速入门用例】2026必学！LangChain最新V1.x版本全家桶LangChain+LangGraph+DeepAgents开发经验免费分享
+[https://youtu.be/0ixyKPE2kHQ](https://youtu.be/0ixyKPE2kHQ)
 [https://www.bilibili.com/video/BV1EZ62BhEbR/](https://www.bilibili.com/video/BV1EZ62BhEbR/)
 
 ### 3.1 下载源码
@@ -130,8 +126,8 @@ anaconda提供python虚拟环境,pycharm提供集成开发环境
 
 ### 3.2 构建项目
 
-使用pycharm构建一个项目，为项目配置虚拟python环境  
-项目名称：LangChainV1xTest  
+使用pycharm构建一个项目，为项目配置虚拟python环境
+项目名称：LangChainV1xTest
 虚拟环境名称保持与项目名称一致
 
 ### 3.3 将相关代码拷贝到项目工程中
@@ -211,4 +207,3 @@ python api_test.py --web --stream --debug         # 流式，Web Agent 场景（
 python api_test.py --multi                        # 非流式，多 Agent 协作场景
 python api_test.py --multi --stream --debug       # 流式，多 Agent 协作场景
 ```
-
