@@ -9,7 +9,7 @@
 ```
 learning-md/
 ├── github/       # Git & GitHub 教学文档（15 篇）
-├── langchain/    # LangChain & Agent 开发教学文档（37 篇）
+├── langchain/    # LangChain & Agent 开发教学文档（38 篇）
 └── example/      # 17 个开源项目实战代码
 ```
 
@@ -94,6 +94,7 @@ learning-md/
 | 35 | 2026 十大 Agent 框架到底选哪个 | LangGraph、AutoGen、CrewAI 等横评 |
 | 36 | Agent 应用案例 1 | CrewAI + FastAPI 多 Agent 协作 |
 | 37 | Agent 应用案例 2 | 技术研究员智能体案例 |
+| 38 | Agent 应用案例 3 | 健康档案助手智能体案例（RAG + CrewAI） |
 
 ---
 
