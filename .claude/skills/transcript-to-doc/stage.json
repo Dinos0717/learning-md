@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+
+  "__meta__": {
+    "description": "逐字稿教案转化 - 阶段状态追踪文件。每完成一步标记 done，全部完成后所有状态重置为 pending（清空标记）。",
+    "version": "4.1.0",
+
+    "status_lifecycle": {
+      "pending": "尚未开始",
+      "in_progress": "正在执行中",
+      "done": "已完成",
+      "blocked": "受阻，详见 blocked_reason 字段",
+      "skipped": "已跳过（仅限可选项）"
+    },
+
+    "blocked_error_grading": {
+      "agent_failed": "Agent 调用异常（超时、返回空、格式错误）— 自动重新分派",
+      "needs_input": "等待用户确认或补充信息 — 暂停流水线，提示用户",
+      "content_gap": "录音稿该段内容不完整/缺失 — 标记并继续，最终报告中注明",
+      "quality_rejected": "审查不通过，质量不达标 — 触发 fix Agent 或重新撰写"
+    },
+
+    "module_template": {
+      "id": "M01",
+      "title": "模块标题",
+      "type": "概念讲解 | 代码实操 | 案例分析 | Q&A答疑",
+      "transcript_time_range": "00:00 - 00:00",
+      "target_lines": 0,
+      "write": {
+        "status": "pending",
+        "agent_id": null,
+        "started_at": null,
+        "completed_at": null,
+        "actual_lines": 0,
+        "chunk_file": "_chunks/M01-模块名.md"
+      },
+      "review": {
+        "status": "pending",
+        "agent_id": null,
+        "started_at": null,
+        "completed_at": null,
+        "verdict": null,
+        "issues": []
+      },
+      "fix": {
+        "status": "pending",
+        "agent_id": null,
+        "round": 0,
+        "started_at": null,
+        "completed_at": null,
+        "changes_summary": null
+      }
+    },
+
+    "reset_rule": "当 overall_status 变为 done 后，将所有 status 字段重置为 pending，清空 modules 数组，清空所有 output/agent_id/started_at/completed_at/blocked_reason。meta 保留供存档参考。"
+  },
+
+  "meta": {
+    "title": "",
+    "transcript_duration_minutes": 0,
+    "level": "",
+    "target_scale_lines": 0,
+    "output_path": "",
+    "created_at": "",
+    "updated_at": "",
+    "overall_status": "pending",
+    "resume_count": 0
+  },
+
+  "stages": {
+    "1_decompose": {
+      "status": "pending",
+      "label": "Stage 1: 模块拆解",
+      "started_at": null,
+      "completed_at": null,
+      "blocked_reason": null,
+      "steps": {
+        "1.1_duration_assessment": {
+          "status": "pending",
+          "label": "时长评估 & 级别判定",
+          "output": null
+        },
+        "1.2_module_scan": {
+          "status": "pending",
+          "label": "模块边界扫描 & 清单输出",
+          "output": null
+        },
+        "1.3_user_confirmation": {
+          "status": "pending",
+          "label": "向用户报告 & 确认拆解方案",
+          "output": null
+        },
+        "1.4_create_dirs": {
+          "status": "pending",
+          "label": "创建工程目录结构",
+          "output": null
+        },
+        "1.5_write_chunks": {
+          "status": "pending",
+          "label": "写入 _chunks/ 模块 Stub 文件（参照 _TEMPLATE.md）",
+          "output": null
+        }
+      }
+    },
+
+    "2_write_modules": {
+      "status": "pending",
+      "label": "Stage 2: 逐模块撰写（子 Agent 并行）",
+      "started_at": null,
+      "completed_at": null,
+      "blocked_reason": null,
+      "batch_strategy": null,
+      "modules": []
+    },
+
+    "3_module_review": {
+      "status": "pending",
+      "label": "Stage 3: 模块级审查（子 Agent 并行）",
+      "started_at": null,
+      "completed_at": null,
+      "blocked_reason": null,
+      "modules": []
+    },
+
+    "4_merge": {
+      "status": "pending",
+      "label": "Stage 4: 合并",
+      "started_at": null,
+      "completed_at": null,
+      "blocked_reason": null,
+      "steps": {
+        "4.1_concat": {
+          "status": "pending",
+          "label": "按编号拼接所有模块内容"
+        },
+        "4.2_header_toc": {
+          "status": "pending",
+          "label": "生成文档头部 & 统一定稿目录（锚点链接）"
+        },
+        "4.3_numbering": {
+          "status": "pending",
+          "label": "统一章节编号（一、二、三... / X.1, X.2...）"
+        },
+        "4.4_format": {
+          "status": "pending",
+          "label": "格式统一（表格对齐、ASCII图、代码块语言标记）"
+        },
+        "4.5_cross_ref": {
+          "status": "pending",
+          "label": "交叉引用补全（扫描占位符 → 替换为实际锚点链接）"
+        },
+        "4.6_footer": {
+          "status": "pending",
+          "label": "生成文档尾部（课程小结 + 元数据行）"
+        }
+      }
+    },
+
+    "5_final_review": {
+      "status": "pending",
+      "label": "Stage 5: 合并后终审",
+      "started_at": null,
+      "completed_at": null,
+      "blocked_reason": null,
+      "steps": {
+        "5.1_density": {
+          "status": "pending",
+          "label": "密度检查（总行数 ÷ 分钟数 ≥ 最低密度）"
+        },
+        "5.2_coverage": {
+          "status": "pending",
+          "label": "内容覆盖检查（对照原始录音稿全量核对）"
+        },
+        "5.3_consistency": {
+          "status": "pending",
+          "label": "一致性检查（术语统一、无矛盾、锚点正确）"
+        },
+        "5.4_usability": {
+          "status": "pending",
+          "label": "教学可用性检查（6 项标准）"
+        },
+        "5.5_format_details": {
+          "status": "pending",
+          "label": "格式细节检查（口语词、闭合、元数据行）"
+        },
+        "5.6_final_report": {
+          "status": "pending",
+          "label": "输出终审报告 & 标记完成"
+        }
+      }
+    }
+  }
+}

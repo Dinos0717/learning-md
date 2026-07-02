@@ -1,323 +1,458 @@
 ---
 name: transcript-to-doc
 description: This skill should be used when the user provides a video transcript (逐字稿) and asks to convert it into a detailed teaching document (教学文档). Trigger phrases include: "生成教学文档", "写教案", "根据这个内容生成文档", "用相同的模版生成", "整理成教学文档", "把这个课程内容整理出来", "转化成详细文档", or any request to turn spoken/transcribed content into structured educational material. Also triggers when the user provides content labeled as "共享音频" (shared audio transcript) from 陈泽鹏 or similar course video transcripts.
-version: 1.0.0
+version: 4.1.0
 ---
 
-# 逐字稿教案转化（Transcript-to-Teaching-Document）
+# 逐字稿教案转化 v4.0
 
 ## Overview
 
-This skill converts raw video course transcripts (逐字稿) into comprehensive, well-structured teaching documents (教学文档). It takes conversational, sometimes disorganized spoken content and transforms it into polished, logically-organized educational material suitable for student self-study.
+将原始视频课程录音稿（逐字稿）转化为结构化教学文档。
 
-## When to Use This Skill
+> **核心定位**：不是做"笔记"，是做"课件"——拿着这份文档去给学员讲课。
 
-Invoke this skill when:
+**v4.0 变更**：拆分为多文件结构（`template.md` + `stage.json` + `_chunks/`），与其他 GitHub Skill 规范对齐。
 
-- The user provides a block of video transcript text and asks to "生成文档", "写教案", "整理", etc.
-- The user mentions "用相同的模版生成" (generate using the same template)
-- Content is labeled with speaker names like "陈泽鹏 共享音频" and timestamps like "00:05"
-- The user wants to create teaching material from course recordings
-- The user asks to "详细" (add more detail) to an existing transcript-based document
+## 文件结构
 
-## Conversion Principles
+```
+transcript-to-doc/
+├── SKILL.md           # 本文件 — 流程编排器（你正在读的）
+├── template.md        # 严格输出框架 — 所有子 Agent 必须按此格式输出
+├── stage.json         # 阶段状态追踪 — 每完成一步标记，全部完成后清空
+└── _chunks/           # 模块录音稿片段 — Stage 1 拆解后每个模块的 chunk.md
+    ├── M01-[模块名].md
+    ├── M02-[模块名].md
+    └── ...
+```
 
-### Core Philosophy
+### 各文件职责
 
-The spoken transcript is the **raw material**. The teaching document is the **finished product**. The gap between them includes:
-
-| Raw Transcript | → | Teaching Document |
+| 文件 | 谁读 | 职责 |
 |---|---|---|
-| Conversational, repetitive | → | Concise, well-structured |
-| Linear time-based flow | → | Logical chapter-based flow |
-| Implicit knowledge | → | Explicit definitions and tables |
-| Verbal emphasis ("注意!", "OK吧") | → | Visual emphasis (⚠️, tables, callouts) |
-| Scattered code snippets | → | Complete, runnable code blocks |
-| Informal examples | → | Systematic comparison tables |
-| One-off mentions of errors | → | Organized troubleshooting guides |
-
-### Key Rules
-
-1. **Preserve all technical content** — Every concept, every code pattern, every warning the teacher mentions must appear in the document
-2. **Remove verbal filler** — "Ok吧", "好", repetitive explanations of the same point, false starts
-3. **Infer structure** — The teacher may not explicitly organize content into chapters; you must derive logical groupings
-4. **Expand on concepts** — When the teacher mentions a term without defining it, add a brief definition
-5. **Add visual organization** — Use tables, diagrams (ASCII art), callout boxes, and comparison charts
-6. **Create navigability** — Always include a table of contents with anchor links
-7. **Match the template style** — All documents in a series should share the same chapter structure and formatting patterns
-
-## Document Template Structure
-
-Every teaching document should follow this canonical structure. Not every section is required for every document; adapt based on the transcript content.
-
-```
-# [课程主题] (Title — derived from content, not transcript)
-
-> 基于陈泽鹏老师视频课程整理编写 · [当前日期]
+| `SKILL.md` | 主 Agent（编排者） | 流程控制、阶段调度、Agent 分发 |
+| `template.md` | 子 Agent（撰写者/审查者） | 输出格式规范、内容模式、保留规则 |
+| `stage.json` | 主 Agent 读写 | 状态追踪，替代旧版 TODO.md |
+| `_chunks/*.md` | 子 Agent 读取 | 每个模块的录音稿原文 + 撰写指令 |
 
 ---
 
-## 目录 (Table of Contents — always include, with anchor links)
+## ⚠️ 关键前置规则
+
+> **绝对禁止**拿到录音稿后直接开始写文档！必须走完整 5 阶段流水线。
+>
+> **绝对禁止**在主对话中逐模块撰写 L/XL 级录音稿。必须通过子 Agent 并行分发。
+>
+> **所有子 Agent 输出必须严格遵循 `template.md` 的框架。**
 
 ---
 
-## 一、课程背景与目标 (Background & Objectives)
+## 断点续传（Resume）
 
-### 1.1 前情回顾 (Previous Lesson Review)
-- What was learned in the previous lesson
-- Code recap from previous lesson (if applicable)
+> **每次启动时，先检查 stage.json 的 `overall_status`。**
 
-### 1.2 本节课的核心问题 (Core Problem)
-- The problem scenario this lesson solves
-- Presented as a question or problem table
+### 检测逻辑
 
-### 1.3 本课要掌握的目标 (Learning Objectives)
-- Visual box with numbered objectives
-- Usually 2-3 key objectives derived from the teacher's opening remarks
+```
+读取 stage.json
+    │
+    ├── overall_status = "pending" 且 meta.title 为空
+    │   → 🆕 全新任务，从 Stage 1 开始
+    │
+    ├── overall_status = "pending" 但 meta.title 不为空
+    │   → ⚠️ 异常：meta 有数据但状态被清空。询问用户是否重新开始
+    │
+    ├── overall_status = "in_progress"
+    │   → 🔄 断点续传模式：
+    │       1. 报告当前进度（已完成/总计 Stage，已完成/总计模块）
+    │       2. 跳过所有 status="done" 的步骤和模块
+    │       3. 从第一个 status≠"done" 的位置继续
+    │       4. meta.resume_count += 1
+    │
+    └── overall_status = "done"
+        → ✅ 上次任务已完成。询问用户：开始新任务 or 查看上次结果
+```
+
+### 断点续传报告格式
+
+```
+🔄 检测到未完成任务：
+├── 任务：[meta.title]
+├── 录音时长：~XX 分钟 (X 级)
+├── 已完成：Stage 1 ✅, Stage 2 (7/10 模块), Stage 3 (5/10 模块)
+├── 中断位置：Stage 2 — M08 待撰写
+├── 续传策略：跳过已完成模块，从 M08 开始继续 Stage 2
+└── 是否继续？
+```
+
+### 续传规则
+
+- **Stage 1 已全部 done** → 跳过，直接进 Stage 2
+- **Stage 2 部分模块 done** → 只分派 status≠"done" 的模块给 Agent
+- **Stage 3 部分模块 done** → 只审查 status≠"done" 的模块
+- **Stage 4/5 done** → 已完成，跳过
+- **status="blocked" 的模块** → 根据 blocked_reason 决定：agent_failed → 重新分派；needs_input → 提示用户；content_gap → 跳过并记录
 
 ---
 
-## 二、[核心概念一] (First Core Concept)
+## 双角色定位
 
-### 2.1 直观理解 (Intuitive Understanding)
-- Analogy or simple explanation
-- "Before vs After" comparison if applicable
+文档必须同时满足两个角色：
 
-### 2.2 详细解释 (Detailed Explanation)
-- Technical definition
-- How it works
-
-### 2.3 [子概念 / 子步骤] (Sub-concepts as needed)
-- Break down complex topics into digestible chunks
-
----
-
-## 三、[核心概念二] (Second Core Concept — if applicable)
-
-(Following the same sub-structure as above)
-
----
-
-## 四、实战演示 / 完整代码 (Hands-on / Complete Code)
-
-### 4.1 完整代码
-- Complete, runnable code block
-- With comments in Chinese explaining each section
-
-### 4.2 代码逐行解析 (Line-by-line Analysis)
-- Table format: Line | Purpose | Details
-
----
-
-## 五、[进阶内容] (Advanced Content — if applicable)
-
----
-
-## 六、[对比与选择] (Comparison & Decision Guide — if applicable)
-- Comparison tables for alternative approaches
-- Decision trees
-
----
-
-## 七、常见问题与排错指南 (Troubleshooting Guide)
-
-### 7.1 错误速查表
-| 错误信息 | 原因 | 解决方法 | 优先级 |
-
-### 7.2 排查流程
-- Step-by-step debugging flowchart (ASCII art)
-
----
-
-## 八、课后练习 (Practice Exercises)
-
-### 练习一: [基础练习]
-### 练习二: [进阶练习]
-### 练习三: [综合实战]
-- Each with clear acceptance criteria
-- Framework code hints where helpful
-
----
-
-## 九、课程小结 (Lesson Summary)
-
-### 9.1 核心知识图谱
-- Visual box with all key knowledge points
-
-### 9.2 一句话总结
-- One-sentence takeaway
-
-### 9.3 练习题答案 (if the transcript includes a quiz)
-- Answer explanation with rationale for each option
-
-### 9.4 系列课程定位
-- Where this lesson fits in the overall curriculum
-
----
-
-*本教学文档基于陈泽鹏老师视频课程整理编写。*
-```
-
-## Reusable Content Patterns
-
-These patterns should appear consistently across all documents in the series:
-
-### Pattern 1: Learning Objectives Box
-
-```
-┌─────────────────────────────────────────────────┐
-│                                                 │
-│  目标一：[标题]                                   │
-│         ├── [子目标1]                             │
-│         ├── [子目标2]                             │
-│         └── [子目标3]                             │
-│                                                 │
-│  目标二：[标题]                                   │
-│         ├── [子目标1]                             │
-│         └── [子目标2]                             │
-│                                                 │
-└─────────────────────────────────────────────────┘
-```
-
-### Pattern 2: Before/After Comparison
-
-```python
-# ❌ Before (problem)
-[code showing the problem]
-
-# ✅ After (solution)
-[code showing the solution]
-```
-
-### Pattern 3: Knowledge Graph Box (for summary chapter)
-
-```
-┌────────────────────────────────────────────────────────────┐
-│               [Topic] 核心知识体系                            │
-├────────────────────────────────────────────────────────────┤
-│                                                            │
-│  1️⃣  [Key Point Title]                                     │
-│      ├── [Detail 1]                                        │
-│      ├── [Detail 2]                                        │
-│      └── [Detail 3]                                        │
-│                                                            │
-│  2️⃣  [Key Point Title]                                     │
-│      ...                                                   │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-```
-
-### Pattern 4: Process Flow Diagram
-
-```
-Step 1: [Action]
-    ↓
-Step 2: [Action]
-    ↓
-Step 3: [Action]
-    ↓
-🎉 Result
-```
-
-### Pattern 5: Decision Tree
-
-```
-Question?
-    ├── Answer A → Action 1
-    └── Answer B → Action 2
-```
-
-### Pattern 6: Series Positioning (always at the end)
-
-```
-第一课: [Title]
-第二课: [Title]
-...
-第N课（本课）: [Title]  ← 你在这里
-后续: [Future topics]
-```
-
-## Content Expansion Guidelines
-
-When the transcript mentions something briefly, expand it appropriately:
-
-| Transcript Mentions | Document Should Include |
+| 角色 | 需求 |
 |---|---|
-| A code snippet shown on screen | Complete runnable code with comments, line-by-line analysis |
-| An error the teacher encounters | Error name, cause, solution, a dedicated row in the troubleshooting table |
-| "这个东西" / "那个东西" | The actual technical term with proper naming |
-| A model/provider name | A row in a comparison table with all relevant attributes |
-| Two alternative approaches | A full comparison table with pros/cons, use cases, code examples |
-| "注意" / "一定要注意" | A ⚠️ callout box with prominent formatting |
-| A quiz question at the end | The question, all options, correct answer with explanation |
+| **讲稿（Teacher-Facing）** | 看得懂逻辑能照着讲、推导链完整、代码能跑、排错实录在手、对比表在手 |
+| **课件（Student-Facing）** | 结构清晰能预习/复习、目录可跳转、图示直观、练习有验收标准、排错指南覆盖常见坑 |
 
-## Code Block Standards
+---
 
-- All code blocks must be **complete and runnable** (include imports, API key setup)
-- Add **Chinese comments** explaining each logical section
-- Use `# ── Section Label ──` style separators for major sections
-- Include both **simple** and **complete** versions when helpful
-- Show **error-prone code** and **corrected code** side by side when relevant
+## 5 阶段流水线
 
-## Table Usage Guidelines
+```
+录音稿输入
+    ↓
+Stage 1: 模块拆解 → 读 stage.json，标记 1.1-1.5 完成
+    ↓
+Stage 2: 逐模块撰写（子 Agent 并行）→ _chunks/*.md → 合并为模块草稿
+    ↓
+Stage 3: 模块级审查（子 Agent 并行）→ 不通过则退回 Stage 2 重写
+    ↓
+Stage 4: 合并 → 拼接 + 目录 + 编号统一 + 格式统一
+    ↓
+Stage 5: 合并后终审 → 5 项检查 → 全部通过后清空 stage.json
+    ↓
+🎉 最终文档交付
+```
 
-Use tables liberally for:
+---
 
-- **Comparisons** (Method A vs Method B, Model X vs Model Y)
-- **Parameter references** (all parameters with type, required/optional, description)
-- **Error troubleshooting** (error → cause → solution)
-- **Model/provider feature matrices**
-- **Decision guides** (scenario → recommendation → reason)
+## Stage 1: 模块拆解
 
-## Tone and Language
+### 目标
+将录音稿按主题切分为独立模块，每个模块写入 `_chunks/M0X-[模块名].md`。
 
-- **Default language**: Chinese (Simplified)
-- **Tone**: Professional but approachable, like a patient teacher
-- **Use "你"** for the reader (not "您")
-- **Use emoji** sparingly for visual cues (⚠️ for warnings, ✅/❌ for correct/incorrect, 🎉 for success)
-- **Code comments**: Chinese
-- **Technical terms**: Keep in English when standard (API, JSON, Python), explain in Chinese when first introduced
+### 步骤
 
-## Quality Checklist
+**1.1 时长评估 & 级别判定**
 
-Before finalizing any document, verify:
+从录音稿提取时间戳，判定级别：
 
-- [ ] Table of contents with working anchor links is included
-- [ ] All code blocks are complete and have Chinese section comments
-- [ ] At least one comparison table is present
-- [ ] A troubleshooting/FAQ section exists (with error table if applicable)
-- [ ] Practice exercises section has 3-5 exercises with clear criteria
-- [ ] Knowledge graph box appears in the summary chapter
-- [ ] Series positioning shows where this lesson fits
-- [ ] All technical claims from the transcript are captured
-- [ ] No verbal filler from the transcript remains
-- [ ] ⚠️ callouts exist for every warning/note the teacher emphasized
-- [ ] Document metadata line at the bottom (based on 陈泽鹏 video course)
+| 级别 | 录音时长 | 文档目标规模 | 最低密度 | 策略 |
+|---|---|---|---|---|
+| **S** | < 15 分钟 | 800-1,500 行 | 60 行/分钟 | 可单 Agent 串行 |
+| **M** | 15-45 分钟 | 1,200-2,500 行 | 50 行/分钟 | 2-3 Agent 并行 |
+| **L** | 45-90 分钟 | 2,000-4,000 行 | 40 行/分钟 | 必须并行，3-5 个/轮 |
+| **XL** | > 90 分钟 | 3,000-6,000 行 | 35 行/分钟 | 必须并行，5-8 个/轮 |
 
-## Handling "用相同的模版生成" Requests
+**1.2 模块边界扫描**
 
-When the user says "用相同的模版生成" followed by new transcript content:
+识别主题转换信号：
+- 时间戳跳跃 + 话题切换词（"接下来"、"下面我们"、"OK 那么"）
+- 操作模式切换（讲概念 → 写代码 → 调试 → Q&A）
+- 明确的章节标题或序号
+- 老师声明"这一节/这一部分"
 
-1. Identify which existing document in the project is the "template" (usually the most recently created one)
-2. Extract the **chapter structure pattern** from that template
-3. Apply the same chapter organization to the new content
-4. Match the **visual style** (same types of tables, same box styles, same code formatting)
-5. Match the **depth of detail** (similarly comprehensive expansion)
-6. Match the **auxiliary sections** (troubleshooting, exercises, summary format)
-7. Ensure the new document can stand alone while fitting into the series
+输出模块清单，每个模块标注：编号、标题、时间范围、类型（概念讲解/代码实操/案例分析/Q&A答疑）。
 
-## Handling "能再详细一些吗" Requests
+**1.3 向用户报告 & 确认**
 
-When the user asks to make an existing document more detailed:
+```
+📊 Stage 1 报告：
+├── 录音时长：~XX 分钟 → X 级
+├── 检测到 N 个模块
+├── 目标总规模：X,XXX+ 行
+├── 模块清单：
+│   ├── M01: [标题] (~X分钟, [类型])
+│   ├── M02: [标题] (~X分钟, [类型])
+│   └── ...
+└── 是否确认拆解方案？
+```
 
-1. Re-read the **original transcript** (not just the existing document)
-2. Identify content that was mentioned but not fully expanded
-3. Add depth in these dimensions:
-   - More step-by-step breakdowns
-   - Additional code examples (variants, edge cases)
-   - More comparison tables
-   - Line-by-line code analysis
-   - Deeper conceptual explanations
-   - More troubleshooting scenarios
-   - Expanded practice exercises
-4. Typically increases word count by 3-5x
+**1.4 更新 stage.json**
+
+将 `meta` 字段填入标题、时长、级别、目标规模。将 `stages.1_decompose` 中完成的步骤标记为 `done`。
+
+**1.5 写入 _chunks/ 模块文件**
+
+参照 `_chunks/_TEMPLATE.md` 的标准格式，为每个模块创建 `_chunks/M0X-[模块名].md`。
+
+每个 chunk 文件包含以下段落（详见 `_TEMPLATE.md`）：
+- 模块元数据（标题、时间、类型、目标行数、对应 template.md 模板）
+- 原始录音稿段落（完整粘贴，不删减）
+- 上下文提示（前后模块关系、本模块角色）
+- 撰写提示词（必须覆盖的知识点清单、推荐结构、特别注意事项）
+
+完成后将 `stage.json` 中 `1_decompose` 全部步骤标记为 `done`，并将模块清单写入 `stage.json` 的 `stages.2_write_modules.modules` 数组。
+
+---
+
+## Stage 2: 逐模块撰写（子 Agent 并行）
+
+### 核心原则
+
+> **每个模块 = 一个独立子 Agent 任务，并行执行。**
+>
+> 每个子 Agent 必须读取 `template.md` 作为输出规范。
+
+### 调度策略
+
+| 级别 | 模块数 | 策略 |
+|---|---|---|
+| **S** | 3-5 个 | 可主对话生成，或 2-3 Agent 并行 |
+| **M** | 5-8 个 | 2-3 Agent 并行，分批次 |
+| **L** | 8-15 个 | 全部 Agent 并行，3-5 个/轮 |
+| **XL** | 12-20 个 | 全部 Agent 并行，5-8 个/轮 |
+
+### Agent 调用规范
+
+每个模块的 Agent 调用结构：
+
+```
+Agent(
+  name: "write-M0X-[模块名]",
+  description: "撰写模块 M0X: [模块标题]",
+  prompt: """
+你是教学文档撰写专家。
+
+## 输出规范（必须严格遵守）
+请先读取 template.md，所有输出必须符合其中定义的框架。
+
+## 模块信息
+请读取 _chunks/M0X-[模块名].md，其中包含：
+- 模块元数据（标题、时间范围、类型、目标行数）
+- 原始录音稿段落
+- 撰写提示词
+
+## 撰写要求
+1. 只写这个模块的内容，不要写前言、目录、总结等跨模块内容
+2. 严格按照录音稿内容展开，不得遗漏技术要点
+3. 遵循 template.md 中的 Rich Content Preservation Rules
+4. 使用 template.md 中定义的标准格式（表格、ASCII 图、⚠️ callout）
+5. 目标行数不得低于 _chunks 中指定目标的 80%
+6. 输出为纯 Markdown，以 `## [章节编号]. [模块标题]` 开头
+"""
+)
+```
+
+### 结果处理
+
+1. Agent 返回后，将内容写入 `_chunks/M0X-[模块名].md`（追加在原始内容之后，用 `---` 分隔）
+2. 在 `stage.json` 中标记该模块为 `done`，记录 agent-id 和实际行数
+3. 如果 Agent 失败，在 stage.json 中标记为 `blocked`，重新分派
+
+---
+
+## Stage 3: 模块级审查
+
+### 审查维度
+
+| 检查维度 | 检查方法 |
+|---|---|
+| **内容完整性** | 对照 _chunks 中的原始录音稿段落，逐条核对技术概念是否都出现 |
+| **代码可用性** | 代码块是否完整可运行？是否缺少 imports？ |
+| **推导链保留** | 推理过程是否被压缩？每步有"为什么"吗？（见 template.md Rule 2） |
+| **踩坑保留** | 调试过程是否保留？是否有排错实录段落？（见 template.md Rule 1） |
+| **类比展开** | 长类比是否展开？有没有被压缩？（见 template.md Rule 3） |
+| **密度达标** | 该模块行数 ≥ 目标行数的 80%？ |
+| **格式合规** | 是否符合 template.md 的格式规范？ |
+
+### 审查 Agent 调用
+
+```
+Agent(
+  name: "review-M0X-[模块名]",
+  description: "审查模块 M0X",
+  prompt: """
+你是教学文档质量审查专家。
+
+## 审查标准
+请先读取 template.md，了解 Rich Content Preservation Rules 和格式规范。
+
+## 审查内容
+请读取 _chunks/M0X-[模块名].md，对照原始录音稿段落和已撰写内容。
+
+## 输出格式
+- 总体评分: [通过 / 需修改 / 不通过]
+- 优点: [...]
+- 问题列表:
+  - [问题1]: [描述] → [修改建议]
+- 缺失内容清单: [录音稿中提到但文档中遗漏的内容]
+"""
+)
+```
+
+### 审查结果处理
+
+| 审查结论 | 处理方式 |
+|---|---|
+| **通过** | stage.json 中标记该模块审查 `done` |
+| **需修改** | ➡️ 触发 **fix Agent**（见下方），修复后重新审查 |
+| **不通过** | stage.json 中标记 `blocked`，`blocked_reason: "quality_rejected"`，**重新分派撰写 Agent**（不复用原 Agent） |
+
+### Fix Agent 调用规范（"需修改"时触发）
+
+> **重要**：不重新调用原撰写 Agent（上下文已销毁）。使用独立的 fix Agent，只做定向修补。
+
+```
+Agent(
+  name: "fix-M0X-[模块名]",
+  description: "修复模块 M0X: [模块标题]",
+  prompt: """
+你是教学文档修复专家。你的任务是**定向修补**，不是重写。
+
+## 修复原则
+- 只修改审查指出的问题，不动其他内容
+- 保持原有风格和结构
+- 修复后的行数不得低于原目标 80%
+
+## 当前模块内容
+[粘贴 _chunks/M0X-*.md 中的已撰写内容]
+
+## 审查意见
+[粘贴审查 Agent 的全部输出：评分、问题列表、缺失内容清单]
+
+## 要求
+1. 逐条处理审查意见中的每个问题
+2. 补充缺失内容清单中的每一项
+3. 修复后输出完整模块内容（非 diff）
+4. 在修改处用 HTML 注释标注：<!-- fix: [问题简述] -->
+"""
+)
+```
+
+### Fix 循环上限
+
+| 场景 | 最多 fix 轮次 |
+|---|---|
+| S/M 级 | 2 轮 |
+| L/XL 级 | 3 轮 |
+
+超过上限仍不通过 → 降级为 `不通过`，重新分派撰写 Agent。
+
+---
+
+## Stage 4: 合并
+
+### 步骤
+
+1. 按模块编号顺序拼接所有已撰写内容
+2. 生成文档头部（标题、日期、目录，按 template.md 定义的头部格式）
+3. 生成统一定稿目录（锚点链接）
+4. 统一章节编号（一、二、三... / X.1, X.2...）
+5. **交叉引用补全**（见下方详细说明）
+6. 格式统一（表格对齐、ASCII 图边界、代码块语言标记）
+7. 生成文档尾部（课程小结 + 元数据行，按 template.md 定义的尾部格式）
+8. 在 stage.json 中标记 Stage 4 所有步骤 `done`
+
+### 4.5 交叉引用补全
+
+> **问题**：Stage 2 各模块独立撰写，模块 B 中可能写了"如前面讲的……"但不知道具体指哪个章节。
+>
+> **解决**：Stage 4 合并后扫描占位符，替换为确定的锚点链接。
+
+**扫描规则**：
+
+扫描合并后文档中的以下模式，将其替换为实际锚点：
+
+| 占位符模式（regex） | 替换为 |
+|---|---|
+| `详见 [第 X 章：章节标题]` | `详见 [第 N 章：实际章节标题](#实际锚点)` |
+| `前面 [第 X 章] 中` | `前面 [第 N 章：实际章节标题](#实际锚点) 中` |
+| `如 [模块名] 所述` | `如 [第 N 章：实际章节标题](#实际锚点) 所述` |
+| `🔗 \*\*前置知识\*\*：[^*]+` | 替换为正确的章节引用 + 锚点链接 |
+
+**补全算法**：
+
+```
+1. 遍历最终文档，提取所有章节标题和对应锚点
+2. 构建索引: {关键词 → [章节号, 锚点]}
+3. 扫描文档中的占位符模式
+4. 对每个占位符：
+   ├── 能匹配到确定的章节 → 替换为正确锚点链接
+   ├── 模糊匹配（多个候选） → 保留占位符，在文档末尾加 ⚠️ 待确认标记
+   └── 无法匹配 → 保留原文本，在终审报告中列出
+```
+
+### 输出路径
+
+合并后的最终文档写入用户在 Stage 1 确认的目标路径。
+
+---
+
+## Stage 5: 合并后终审
+
+### 5 项检查
+
+由终审 Agent 对合并后的完整文档进行检查：
+
+| # | 检查项 | 内容 |
+|---|---|---|
+| 5.1 | **密度检查** | 总行数 ÷ 录音分钟数 ≥ 级别最低密度？不达标则标出尺寸不足的模块 |
+| 5.2 | **内容覆盖** | 对照原始录音稿，逐条核验重要概念是否出现，列出遗漏项 |
+| 5.3 | **一致性检查** | 术语统一？无矛盾？锚点正确？编号连续？ |
+| 5.4 | **教学可用性** | 6 项标准（讲稿可用、演示可用、提问应对、学员自救、学员自测、三层递进） |
+| 5.5 | **格式细节** | 无残留口语词？无未闭合代码块/表格？元数据行存在？ |
+
+### 终审 Agent 调用
+
+```
+Agent(
+  name: "final-review",
+  description: "终审合并后的教学文档",
+  prompt: """
+你是教学文档终审专家。
+
+## 检查标准
+请先读取 template.md，了解完整的输出规范和双角色检查清单。
+
+## 检查内容
+请读取合并后的最终文档和原始录音稿，逐项完成 Stage 5 的 5 项检查。
+
+## 输出格式
+逐项标注 ✅ 通过 / ⚠️ 有问题 / ❌ 不通过，附具体问题和修改建议。
+"""
+)
+```
+
+### 终审结果处理
+
+- ⚠️ / ❌ 项 → 记录问题，修复后重新终审
+- 全部 ✅ → 标记 stage.json Stage 5 全部 `done`
+- **清空 stage.json**：将所有状态重置为 `pending`，清除模块记录（保留 meta 供存档参考）
+
+---
+
+## Agent 调度总览
+
+| Stage | Agent 类型 | 并行度 | 输入 | 输出规范 |
+|---|---|---|---|---|
+| 1 拆解 | 主 Agent | 串行 | 录音稿全文 | — |
+| 2 撰写 | 子 Agent × N | 并行（S 级可串行） | `_chunks/M0X-*.md` | `template.md` |
+| 3 审查 | 子 Agent × N | 并行 | `_chunks/M0X-*.md` | `template.md` |
+| 4 合并 | 主 Agent | 串行 | 所有模块内容 | `template.md`（头部/尾部格式） |
+| 5 终审 | 子 Agent × 1 | 单次 | 合并后完整文档 | `template.md`（双角色清单） |
+
+---
+
+## 关键约束
+
+1. **永远不要跳过 Stage**：即使用户说"快速生成"，也必须走完整流水线
+2. **L/XL 级必须并行**：不可在主对话中逐模块撰写
+3. **子 Agent 必须先读 template.md**：所有撰写/审查 Agent 的第一步是读取输出规范
+4. **stage.json 是唯一真相源**：进度只看 stage.json，不要另外维护 TODO
+5. **审查不通过必须重写**：不允许手动修补审查不通过的模块
+6. **最终文档必须可独立阅读**：不依赖录音稿或外部材料
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 变更 |
+|---|---|---|
+| v1.0.0 | 2026-06-18 | 初始版本，基础转换规则和模板 |
+| v2.0.0 | 2026-07-02 | Phase 0-4 工作流、模块检测拆解、多轮验证、密度目标 |
+| v2.1.0 | 2026-07-02 | 双角色定位、教学可用性标准 |
+| v3.0.0 | 2026-07-02 | 文件夹工程 + TODO 追踪 + 5 阶段 + 子 Agent 并行 + 两阶段审查 |
+| v4.0.0 | 2026-07-02 | 多文件拆分：template.md（输出框架）+ stage.json（状态机）+ _chunks/（模块片段） |
+| v4.1.0 | 2026-07-02 | **9 项优化**：断点续传、chunk 模板、4 种模块差异化结构、fix Agent、交叉引用补全、错误分级、嵌套代码块修复、stage.json 规范化、examples/ 示例 |
