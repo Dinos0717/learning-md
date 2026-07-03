@@ -1,7 +1,7 @@
 ---
 name: transcript-to-doc
 description: This skill should be used when the user provides a video transcript (逐字稿) and asks to convert it into a detailed teaching document (教学文档). Trigger phrases include: "生成教学文档", "写教案", "根据这个内容生成文档", "用相同的模版生成", "整理成教学文档", "把这个课程内容整理出来", "转化成详细文档", or any request to turn spoken/transcribed content into structured educational material. Also triggers when the user provides content labeled as "共享音频" (shared audio transcript) from 陈泽鹏 or similar course video transcripts.
-version: 4.1.0
+version: 4.2.0
 ---
 
 # 逐字稿教案转化 v4.0
@@ -12,29 +12,44 @@ version: 4.1.0
 
 > **核心定位**：不是做"笔记"，是做"课件"——拿着这份文档去给学员讲课。
 
-**v4.0 变更**：拆分为多文件结构（`template.md` + `stage.json` + `_chunks/`），与其他 GitHub Skill 规范对齐。
+**v4.2 变更**：引入沙箱机制——每次运行在目标文档旁创建临时工作区 `.transcript-to-doc/`，运行结束自动清理，避免手动重置和并发冲突。
 
 ## 文件结构
+
+### 技能模板（只读，供使用者参考）
 
 ```
 transcript-to-doc/
 ├── SKILL.md           # 本文件 — 流程编排器（你正在读的）
 ├── template.md        # 严格输出框架 — 所有子 Agent 必须按此格式输出
-├── stage.json         # 阶段状态追踪 — 每完成一步标记，全部完成后清空
-└── _chunks/           # 模块录音稿片段 — Stage 1 拆解后每个模块的 chunk.md
-    ├── M01-[模块名].md
-    ├── M02-[模块名].md
-    └── ...
+├── stage.template.json  # stage.json 模板 — 供参考，实际使用沙箱中的副本
+└── _chunks/
+    └── _TEMPLATE.md   # chunk 文件模板 — 供参考
+```
+
+### 运行时沙箱（每次运行时动态创建）
+
+```
+[目标文档所在目录]/
+├── [文档名].md                ← 最终产物
+└── .transcript-to-doc/        ← 沙箱工作区（临时，运行结束销毁）
+    ├── stage.json             # 本次运行的状态追踪
+    └── _chunks/
+        ├── M01-[模块名].md
+        ├── M02-[模块名].md
+        └── ...
 ```
 
 ### 各文件职责
 
-| 文件 | 谁读 | 职责 |
-|---|---|---|
-| `SKILL.md` | 主 Agent（编排者） | 流程控制、阶段调度、Agent 分发 |
-| `template.md` | 子 Agent（撰写者/审查者） | 输出格式规范、内容模式、保留规则 |
-| `stage.json` | 主 Agent 读写 | 状态追踪，替代旧版 TODO.md |
-| `_chunks/*.md` | 子 Agent 读取 | 每个模块的录音稿原文 + 撰写指令 |
+| 文件 | 位置 | 谁读 | 职责 |
+|---|---|---|---|
+| `SKILL.md` | 技能目录 | 主 Agent | 流程控制、阶段调度、Agent 分发 |
+| `template.md` | 技能目录 | 子 Agent | 输出格式规范、内容模式、保留规则 |
+| `stage.json` | **沙箱** | 主 Agent 读写 | 状态追踪 |
+| `_chunks/*.md` | **沙箱** | 子 Agent 读取 | 模块录音稿原文 + 撰写指令 |
+| `stage.template.json` | 技能目录 | 使用者 | 模板参考，不会被运行修改 |
+| `_chunks/_TEMPLATE.md` | 技能目录 | 使用者 | chunk 格式参考 |
 
 ---
 
@@ -48,30 +63,84 @@ transcript-to-doc/
 
 ---
 
+## 🏖️ 沙箱机制（v4.2）
+
+> **每次运行在目标文档旁创建独立沙箱，运行结束自动销毁，实现零污染。**
+
+### 为什么需要沙箱
+
+| 问题 | 无沙箱 | 有沙箱 |
+|---|---|---|
+| 并发冲突 | 两次生成共用同一目录，互相覆盖 | 各自沙箱完全隔离 |
+| 残留清理 | 手动删 chunks + 重置 stage.json | 删整个沙箱目录，一条命令 |
+| 断点续传 | 可能读到上次遗留状态 | 沙箱专属本次任务 |
+| 多任务并行 | 不可行 | 各自沙箱独立运行 |
+
+### 沙箱生命周期
+
+```
+Stage 1.4 创建沙箱
+    ↓
+  创建 .transcript-to-doc/
+    ├── 从技能目录复制 stage.template.json → stage.json
+    └── 创建 _chunks/
+    ↓
+Stage 1.5 ~ Stage 5 读写沙箱中的 stage.json 和 _chunks/
+    ↓
+Stage 5 完成后销毁沙箱
+    rm -rf [目标目录]/.transcript-to-doc/
+```
+
+### 沙箱路径规则
+
+- 沙箱根目录：`[目标文档所在目录]/.transcript-to-doc/`
+- `stage.json`：`[沙箱根目录]/stage.json`
+- `_chunks/`：`[沙箱根目录]/_chunks/`
+- 技能模板（只读）：始终从技能目录读取（`template.md`, `_TEMPLATE.md`）
+
+### 初始化步骤（Stage 1.4 执行）
+
+```
+1. 从 meta.output_path 提取目标目录
+   例如 output_path = ".../Agent架构师/xxx.md"
+   → sandbox_dir = ".../Agent架构师/.transcript-to-doc/"
+
+2. mkdir -p [sandbox_dir]/_chunks
+
+3. 复制 stage.template.json → [sandbox_dir]/stage.json
+   然后更新其中的 meta 字段（标题、时长、级别等）
+
+4. 后续所有 stage.json 和 _chunks/ 的读写都使用沙箱路径
+```
+
+---
+
 ## 断点续传（Resume）
 
-> **每次启动时，先检查 stage.json 的 `overall_status`。**
+> **每次启动时，先检查沙箱中的 stage.json 是否存在及其 `overall_status`。**
+>
+> 沙箱路径 = `[目标文档所在目录]/.transcript-to-doc/stage.json`
 
 ### 检测逻辑
 
 ```
-读取 stage.json
+检查沙箱目录是否存在
     │
-    ├── overall_status = "pending" 且 meta.title 为空
-    │   → 🆕 全新任务，从 Stage 1 开始
+    ├── 不存在 → 🆕 全新任务，从 Stage 1 开始
     │
-    ├── overall_status = "pending" 但 meta.title 不为空
-    │   → ⚠️ 异常：meta 有数据但状态被清空。询问用户是否重新开始
-    │
-    ├── overall_status = "in_progress"
-    │   → 🔄 断点续传模式：
-    │       1. 报告当前进度（已完成/总计 Stage，已完成/总计模块）
-    │       2. 跳过所有 status="done" 的步骤和模块
-    │       3. 从第一个 status≠"done" 的位置继续
-    │       4. meta.resume_count += 1
-    │
-    └── overall_status = "done"
-        → ✅ 上次任务已完成。询问用户：开始新任务 or 查看上次结果
+    └── 存在 → 读取沙箱中的 stage.json
+        │
+        ├── overall_status = "pending" 且 meta.title 为空
+        │   → 🆕 全新任务，从 Stage 1 开始
+        │
+        ├── overall_status = "pending" 但 meta.title 不为空
+        │   → ⚠️ 异常：meta 有数据但状态被清空。询问用户是否重新开始
+        │
+        ├── overall_status = "in_progress"
+        │   → 🔄 断点续传模式
+        │
+        └── overall_status = "done"
+            → ✅ 上次任务已完成。询问用户：开始新任务 or 查看上次结果
 ```
 
 ### 断点续传报告格式
@@ -169,13 +238,21 @@ Stage 5: 合并后终审 → 5 项检查 → 全部通过后清空 stage.json
 └── 是否确认拆解方案？
 ```
 
-**1.4 更新 stage.json**
+**1.4 创建沙箱 & 初始化 stage.json**
 
-将 `meta` 字段填入标题、时长、级别、目标规模。将 `stages.1_decompose` 中完成的步骤标记为 `done`。
+按沙箱机制创建 `.transcript-to-doc/` 工作区：
+
+```
+1. 从 meta.output_path 提取目标目录
+2. mkdir -p [目标目录]/.transcript-to-doc/_chunks
+3. 复制技能目录的 stage.template.json → [目标目录]/.transcript-to-doc/stage.json
+4. 更新 stage.json 的 meta 字段（标题、时长、级别、目标规模、output_path）
+5. 将 overall_status 设为 in_progress
+```
 
 **1.5 写入 _chunks/ 模块文件**
 
-参照 `_chunks/_TEMPLATE.md` 的标准格式，为每个模块创建 `_chunks/M0X-[模块名].md`。
+参照技能目录的 `_chunks/_TEMPLATE.md` 标准格式，为每个模块创建 **沙箱中**的 `_chunks/M0X-[模块名].md`。
 
 每个 chunk 文件包含以下段落（详见 `_TEMPLATE.md`）：
 - 模块元数据（标题、时间、类型、目标行数、对应 template.md 模板）
@@ -216,10 +293,10 @@ Agent(
 你是教学文档撰写专家。
 
 ## 输出规范（必须严格遵守）
-请先读取 template.md，所有输出必须符合其中定义的框架。
+请先读取 [技能目录]/template.md，所有输出必须符合其中定义的框架。
 
 ## 模块信息
-请读取 _chunks/M0X-[模块名].md，其中包含：
+请读取 [沙箱目录]/_chunks/M0X-[模块名].md，其中包含：
 - 模块元数据（标题、时间范围、类型、目标行数）
 - 原始录音稿段落
 - 撰写提示词
@@ -231,6 +308,7 @@ Agent(
 4. 使用 template.md 中定义的标准格式（表格、ASCII 图、⚠️ callout）
 5. 目标行数不得低于 _chunks 中指定目标的 80%
 6. 输出为纯 Markdown，以 `## [章节编号]. [模块标题]` 开头
+7. 将结果追加写入 [沙箱目录]/_chunks/M0X-[模块名].md（在原始内容后用 `---` 分隔）
 """
 )
 ```
@@ -419,7 +497,8 @@ Agent(
 
 - ⚠️ / ❌ 项 → 记录问题，修复后重新终审
 - 全部 ✅ → 标记 stage.json Stage 5 全部 `done`
-- **清空 stage.json**：将所有状态重置为 `pending`，清除模块记录（保留 meta 供存档参考）
+- **销毁沙箱**：`rm -rf [目标目录]/.transcript-to-doc/`
+- 🎉 最终文档交付，工作区零残留
 
 ---
 
@@ -456,3 +535,4 @@ Agent(
 | v3.0.0 | 2026-07-02 | 文件夹工程 + TODO 追踪 + 5 阶段 + 子 Agent 并行 + 两阶段审查 |
 | v4.0.0 | 2026-07-02 | 多文件拆分：template.md（输出框架）+ stage.json（状态机）+ _chunks/（模块片段） |
 | v4.1.0 | 2026-07-02 | **9 项优化**：断点续传、chunk 模板、4 种模块差异化结构、fix Agent、交叉引用补全、错误分级、嵌套代码块修复、stage.json 规范化、examples/ 示例 |
+| v4.2.0 | 2026-07-03 | **沙箱机制**：每次运行在目标文档旁创建 `.transcript-to-doc/` 临时工作区，运行结束自动销毁；技能目录中的 `stage.template.json` 和 `_chunks/_TEMPLATE.md` 仅供模板参考 |
