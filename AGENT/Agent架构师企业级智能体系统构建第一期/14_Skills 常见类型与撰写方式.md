@@ -4710,9 +4710,9 @@ Agent: 当前项目中有以下 skills 可用：
 
 Agent: [读取 skill 指令...]
        [尝试执行 python -m py_compile test_code.py]
-     
+   
        错误：zsh: command not found: python
-     
+   
        看起来系统中没有安装 Python，无法进行语法检查。
 ```
 
@@ -4771,13 +4771,13 @@ python3 --version
 用户: 请检查 test_code.py 的语法
 
 Agent: 好的，我来分析一下你的代码。
-     
+   
        这段代码看起来是想实现一个计算功能。
        我注意到 calculate_sum 函数定义后面缺少冒号，
        这是一个语法错误。另外第 9 行也有问题。
-     
+   
        整体来说代码质量还可以，建议你...
-     
+   
        # ← Agent 没有按照 skill 定义的格式输出检查报告
        # ← 缺少表格化的错误清单
        # ← 缺少行号定位
